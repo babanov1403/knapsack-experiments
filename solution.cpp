@@ -195,23 +195,22 @@ auto split_smart(Items&& items, std::int64_t mW) {
     std::ranges::sort(items, std::greater<>{}, [](const Item& item) {
         return item.cost * 1. / item.weight;
     });
-    std::int64_t left_idx = items.size() / 2;
-    std::int64_t right_idx = items.size() / 2 + 1;
-    
+    std::int64_t idx = 0;
     // we consider that our space never ends while we picking up from the middle
     Items to_greedy;
-    while (left_idx >= 0 && right_idx < items.size() && (items.size() - to_greedy.size()) * mW > kMaxArraySize) {
-        to_greedy.emplace_back(items[right_idx++]);
-        mW -= items[right_idx - 1].weight;
-    }
-    std::cout << items.size() << " " << left_idx << " " << right_idx << '\n';
     Items to_dp;
-    for (std::int64_t idx = 0; idx <= left_idx; idx++) {
+    while (idx < items.size() && (items.size() - to_greedy.size()) * mW > kMaxArraySize) {
+        if (items[idx].cost * 1. / items[idx].weight <= 2.) {
+            to_greedy.emplace_back(items[idx]);
+            mW -= items[idx].weight;
+        } else {
+            to_dp.emplace_back(items[idx]);
+        }
+    }
+    for (;idx <items.size(); idx++) {
         to_dp.emplace_back(items[idx]);
     }
-    for (std::int64_t idx = right_idx; idx < items.size(); idx++) {
-        to_dp.emplace_back(items[idx]);
-    }
+    std::cout << "is " << (to_dp.size() * mW > kMaxArraySize) << '\n';
     return std::make_tuple(std::move(to_dp), std::move(to_greedy));
 }
 
