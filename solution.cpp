@@ -191,26 +191,26 @@ auto split(Items&& items, std::int64_t mW) {
 }
 
 auto split_smart(Items&& items, std::int64_t mW) {
-    std::size_t kMaxArraySize = 512 * 1024ll * 1024 / 4; // n * mW
+    std::size_t kMaxArraySize = 64 * 1024ll * 1024 / mW; // n * mW
     std::ranges::sort(items, std::greater<>{}, [](const Item& item) {
         return item.cost * 1. / item.weight;
     });
-    std::int64_t idx = 0;
     // we consider that our space never ends while we picking up from the middle
     Items to_greedy;
     Items to_dp;
-    while (idx < items.size() && (items.size() - to_greedy.size()) * mW > kMaxArraySize) {
-        if (items[idx].cost * 1. / items[idx].weight <= 2.) {
+    std::int64_t idx = 0;
+    for (; idx < items.size() / 2 && (to_dp.size() + 1) <= kMaxArraySize; idx++) {
+        to_dp.emplace_back(items[idx]);
+    }
+
+    while (idx < items.size()) {
+        if ((to_dp.size() + 1) > kMaxArraySize || items[idx].cost * 1. / items[idx].weight <= 1.) {
             to_greedy.emplace_back(items[idx]);
-            mW -= items[idx].weight;
         } else {
             to_dp.emplace_back(items[idx]);
         }
+        idx++;
     }
-    for (;idx <items.size(); idx++) {
-        to_dp.emplace_back(items[idx]);
-    }
-    std::cout << "is " << (to_dp.size() * mW > kMaxArraySize) << '\n';
     return std::make_tuple(std::move(to_dp), std::move(to_greedy));
 }
 
@@ -230,6 +230,7 @@ bool validate(const Result& res, const std::vector<Item>& origin_items) {
 }
 
 int main() {
+    //fuckkk 31253846
     //smarty 31253846
     //greedy 31253846
     //optimy 31254410
@@ -246,8 +247,8 @@ int main() {
     // res.concat(lhs);
 
     auto [to_dp, to_greedy] = split_smart(std::move(items), max_weight);
-    auto res = GreedyScaled(max_weight, std::move(to_greedy));
-    auto lhs = DP(max_weight - res.weight, std::move(to_dp));
+    auto res = DP(max_weight, std::move(to_dp));
+    auto lhs = GreedyScaled(max_weight - res.weight, std::move(to_greedy));
     res.concat(lhs);
     // std::int64_t total_elems = 0;
     // std::int64_t occupied_weight = 0;
