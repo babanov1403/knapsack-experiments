@@ -190,6 +190,31 @@ auto split(Items&& items, std::int64_t mW) {
     return std::make_tuple(std::move(to_greedy), std::move(to_dp), std::move(to_pohui));
 }
 
+auto split_smart(Items&& items, std::int64_t mW) {
+    std::size_t kMaxArraySize = 512 * 1024ll * 1024 / 4; // n * mW
+    std::ranges::sort(items, std::greater<>{}, [](const Item& item) {
+        return item.cost * 1. / item.weight;
+    });
+    std::int64_t left_idx = items.size() / 2;
+    std::int64_t right_idx = items.size() / 2 + 1;
+    
+    // we consider that our space never ends while we picking up from the middle
+    Items to_greedy;
+    while (left_idx >= 0 && right_idx < items.size() && (items.size() - to_greedy.size()) * mW > kMaxArraySize) {
+        to_greedy.emplace_back(items[right_idx++]);
+        mW -= items[right_idx - 1].weight;
+    }
+    std::cout << items.size() << " " << left_idx << " " << right_idx << '\n';
+    Items to_dp;
+    for (std::int64_t idx = 0; idx <= left_idx; idx++) {
+        to_dp.emplace_back(items[idx]);
+    }
+    for (std::int64_t idx = right_idx; idx < items.size(); idx++) {
+        to_dp.emplace_back(items[idx]);
+    }
+    return std::make_tuple(std::move(to_dp), std::move(to_greedy));
+}
+
 bool validate(const Result& res, const std::vector<Item>& origin_items) {
     std::int64_t c = 0, w = 0;
     for (auto idx : res.idxes) {
@@ -206,7 +231,7 @@ bool validate(const Result& res, const std::vector<Item>& origin_items) {
 }
 
 int main() {
-    //smarty 
+    //smarty 31253846
     //greedy 31253846
     //optimy 31254410
     constexpr bool kIsForContest = false;
@@ -214,13 +239,17 @@ int main() {
     auto [number, max_weight, items] = Read<kIsForContest>();
     auto items_copy = items;
 
-    auto [to_greedy, to_dp, to_pohui] = split(std::move(items), max_weight);
+    // auto [to_greedy, to_dp, to_pohui] = split(std::move(items), max_weight);
+    // auto res = GreedyScaled(max_weight, std::move(to_greedy));
+    // auto lhs = DP(max_weight - res.weight, std::move(to_dp));
+    // res.concat(lhs);
+    // lhs = GreedyScaled(max_weight - res.weight, std::move(to_pohui));
+    // res.concat(lhs);
+
+    auto [to_dp, to_greedy] = split_smart(std::move(items), max_weight);
     auto res = GreedyScaled(max_weight, std::move(to_greedy));
     auto lhs = DP(max_weight - res.weight, std::move(to_dp));
     res.concat(lhs);
-    lhs = GreedyScaled(max_weight - res.weight, std::move(to_pohui));
-    res.concat(lhs);
-
     // std::int64_t total_elems = 0;
     // std::int64_t occupied_weight = 0;
     // auto res = Result(0, 0, {});
