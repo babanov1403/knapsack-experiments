@@ -2,8 +2,10 @@
 
 // #include "babanov_tqdm.hpp"
 
+constexpr std::size_t kTestNum = 2;
+
 const std::filesystem::path kDataPath 
-    = std::filesystem::path("data") / std::filesystem::path("01.public");
+    = std::filesystem::path("data") / std::filesystem::path("02.public");
 
 struct Item {
     std::int64_t cost;
@@ -31,7 +33,7 @@ struct Result {
 };
 
 template <bool IsForContest = false>
-std::tuple<std::int64_t, std::int64_t, std::vector<Item>> Read() {
+std::tuple<std::int64_t, std::int64_t, std::vector<Item>> read() {
     if constexpr (IsForContest) {
         std::int64_t number, max_weight;
         std::cin >> number >> max_weight;
@@ -58,7 +60,7 @@ std::tuple<std::int64_t, std::int64_t, std::vector<Item>> Read() {
 }
 
 template <bool IsForContest = false>
-void Output(const Result& result) {
+void output(const Result& result) {
     if constexpr (IsForContest) {
         std::cout << result.value << '\n';
         for (auto idx : result.idxes) {
@@ -82,7 +84,7 @@ void Output(const Result& result) {
     }
 }
 
-Result DP_fast(std::int64_t mW, const std::vector<Item>& items) {
+Result dp_fast(std::int64_t mW, const std::vector<Item>& items) {
     std::int64_t n = items.size();
     std::vector<std::int64_t> dp(mW + 1, 0);
     std::vector<std::int64_t> dp_prev(mW + 1, 0);
@@ -110,7 +112,7 @@ auto normalize_indexes(std::vector<Item>&& items) {
     return std::make_pair(std::move(items), std::move(func));
 }
 
-Result DP(std::int64_t mW, std::vector<Item>&& input_items) {
+Result dp(std::int64_t mW, std::vector<Item>&& input_items) {
     std::int64_t n = input_items.size();
     auto [items, true_idxes] = normalize_indexes(std::move(input_items));
     std::int64_t cols = mW + 1;
@@ -139,7 +141,7 @@ Result DP(std::int64_t mW, std::vector<Item>&& input_items) {
     return Result(max_val, total_w, std::move(selected));
 }
 
-Result GreedyScaled(std::int64_t mW, std::vector<Item> items) {
+Result greedy_scaled(std::int64_t mW, std::vector<Item> items) {
     std::ranges::sort(items, std::greater<>{}, [](const Item& item) {
         return item.cost * 1. / item.weight;
     });
@@ -153,6 +155,20 @@ Result GreedyScaled(std::int64_t mW, std::vector<Item> items) {
         }
     }
     return {total_c, total_w, std::move(idxes)};
+}
+
+Result make_result_from_picked(const std::vector<Item>& picked_items) {
+    std::int64_t total_c = 0;
+    std::int64_t total_w = 0;
+    std::vector<std::int64_t> indexes;
+
+    for (auto [c, w, i] : picked_items) {
+        total_c += c;
+        total_w += w;
+        indexes.emplace_back(i);
+    }
+
+    return Result(total_c, total_w, std::move(indexes));
 }
 
 auto median_exp(const Items& items) {
@@ -205,6 +221,7 @@ auto split_smart(Items&& items, std::int64_t mW) {
 
     while (idx < items.size()) {
         if ((to_dp.size() + 1) > kMaxArraySize || items[idx].cost * 1. / items[idx].weight <= 1.) {
+            std::cout << items[idx].cost << " " << items[idx].weight << '\n';
             to_greedy.emplace_back(items[idx]);
         } else {
             to_dp.emplace_back(items[idx]);
@@ -212,6 +229,48 @@ auto split_smart(Items&& items, std::int64_t mW) {
         idx++;
     }
     return std::make_tuple(std::move(to_dp), std::move(to_greedy));
+}
+
+auto split_very_smart(Items&& items, std::int64_t mW) {
+    std::size_t kMaxArraySize = 64 * 1024ll * 1024; // n * mW
+    std::ranges::sort(items, [](const Item& lhs, const Item& rhs) {
+        double ass = lhs.cost * 1. / lhs.weight;
+        double other_ass = rhs.cost * 1. / rhs.weight;
+
+        if (ass == other_ass) {
+            return lhs.cost > rhs.cost;
+        }
+        return ass > other_ass;
+    });
+    Items to_greedy;
+    std::int64_t total_w = 0;
+    std::int64_t total_c = 0;
+    std::int64_t critical_idx = -1;
+    for (std::int64_t idx = 0; idx < items.size(); idx++) {
+        if (items[idx].weight + total_w > mW) {
+            critical_idx = idx;
+            break;
+        }
+        total_c += items[idx].cost;
+        total_w += items[idx].weight;
+        to_greedy.emplace_back(items[idx]);
+    }
+
+    // now we either take items[critical_idx] and delete some one from array
+    // or do not take items[critical_idx] and trying to fill other
+
+    // 1) do not take items[critical_idx], take items to dp until we can
+    mW -= total_w;
+    Items to_dp;
+    for (std::int64_t idx = critical_idx; idx < items.size() && to_dp.size() * mW < kMaxArraySize; idx++) {
+        to_dp.emplace_back(items[idx]);
+    }
+
+    return std::make_tuple(std::move(to_greedy), std::move(to_dp));
+
+    // 2) delete some one
+
+
 }
 
 bool validate(const Result& res, const std::vector<Item>& origin_items) {
@@ -230,13 +289,14 @@ bool validate(const Result& res, const std::vector<Item>& origin_items) {
 }
 
 int main() {
+    //niceon 31253920
     //fuckkk 31253846
     //smarty 31253846
     //greedy 31253846
     //optimy 31254410
-    constexpr bool kIsForContest = false;
+    constexpr bool kIsForContest = true;
     // constexpr bool kIsForContest = true;
-    auto [number, max_weight, items] = Read<kIsForContest>();
+    auto [number, max_weight, items] = read<kIsForContest>();
     auto items_copy = items;
 
     // auto [to_greedy, to_dp, to_pohui] = split(std::move(items), max_weight);
@@ -246,9 +306,14 @@ int main() {
     // lhs = GreedyScaled(max_weight - res.weight, std::move(to_pohui));
     // res.concat(lhs);
 
-    auto [to_dp, to_greedy] = split_smart(std::move(items), max_weight);
-    auto res = DP(max_weight, std::move(to_dp));
-    auto lhs = GreedyScaled(max_weight - res.weight, std::move(to_greedy));
+    // auto [to_dp, to_greedy] = split_smart(std::move(items), max_weight);
+    // auto res = dp(max_weight, std::move(to_dp));
+    // auto lhs = greedy_scaled(max_weight - res.weight, std::move(to_greedy));
+    // res.concat(lhs);
+
+    auto [to_greedy, to_dp] = split_very_smart(std::move(items), max_weight);
+    auto res = greedy_scaled(max_weight, std::move(to_greedy));
+    auto lhs = dp(max_weight - res.weight, std::move(to_dp));
     res.concat(lhs);
     // std::int64_t total_elems = 0;
     // std::int64_t occupied_weight = 0;
@@ -267,7 +332,7 @@ int main() {
     //     occupied_weight = res.weight;
     // }
 
-    Output<kIsForContest>(res);
+    output<kIsForContest>(res);
     // auto dp_true = GreedyScaled(max_weight, items_copy);
     // Output<kIsForContest>(dp_true);
 }
