@@ -2,10 +2,14 @@
 
 // #include "babanov_tqdm.hpp"
 
-constexpr std::size_t kTestNum = 2;
+constexpr std::size_t kTestNum = 5;
+const std::array<std::size_t, 10> optimums_answers = {
+    31254410, 12697170, 13423811, 3825278, 2053822, 475581, 31391347, 12252874, 498092, 216522
+};
+std::string path = std::to_string(kTestNum);
 
 const std::filesystem::path kDataPath 
-    = std::filesystem::path("data") / std::filesystem::path("02.public");
+    = std::filesystem::path("data") / std::filesystem::path(path + ".public");
 
 struct Item {
     std::int64_t cost;
@@ -15,8 +19,8 @@ struct Item {
 using Items = std::vector<Item>;
 
 struct Result {
-    std::int64_t value;
-    std::int64_t weight;
+    std::int64_t value = 0;
+    std::int64_t weight = 0;
     std::vector<std::int64_t> idxes;
 
     void concat(Result& other) {
@@ -78,8 +82,10 @@ void output(const Result& result) {
         // for (auto idx : result.idxes) {
         //     std::cout << idx << ' ';
         // }
-        constexpr std::int64_t kOptAns = 31254410;
-        std::cout << '\n' << "DIFFERS FROM OPT: " << 1. - result.value * 1. / kOptAns << '\n';
+        std::cout << "ANSWERS: \n";
+        std::cout << "GOT: " << result.value << '\n';
+        std::cout << "OPT: " << optimums_answers[kTestNum - 1] << '\n';
+        std::cout << '\n' << "DIFFERS FROM OPT: " << optimums_answers[kTestNum - 1] - result.value << '\n';
         std::cout << "\n==================RESULT==================n";
     }
 }
@@ -232,6 +238,7 @@ auto split_smart(Items&& items, std::int64_t mW) {
 }
 
 auto split_very_smart(Items&& items, std::int64_t mW) {
+    const std::int64_t original_mW = mW; 
     std::size_t kMaxArraySize = 64 * 1024ll * 1024; // n * mW
     std::ranges::sort(items, [](const Item& lhs, const Item& rhs) {
         double ass = lhs.cost * 1. / lhs.weight;
@@ -242,7 +249,7 @@ auto split_very_smart(Items&& items, std::int64_t mW) {
         }
         return ass > other_ass;
     });
-    Items to_greedy;
+    Result res_greedy;
     std::int64_t total_w = 0;
     std::int64_t total_c = 0;
     std::int64_t critical_idx = -1;
@@ -253,24 +260,92 @@ auto split_very_smart(Items&& items, std::int64_t mW) {
         }
         total_c += items[idx].cost;
         total_w += items[idx].weight;
-        to_greedy.emplace_back(items[idx]);
+        res_greedy.idxes.emplace_back(items[idx].idx);
     }
+
+    res_greedy.value = total_c;
+    res_greedy.weight = total_w;
 
     // now we either take items[critical_idx] and delete some one from array
     // or do not take items[critical_idx] and trying to fill other
 
     // 1) do not take items[critical_idx], take items to dp until we can
+
+    // 1.1)
     mW -= total_w;
     Items to_dp;
+    
     for (std::int64_t idx = critical_idx; idx < items.size() && to_dp.size() * mW < kMaxArraySize; idx++) {
         to_dp.emplace_back(items[idx]);
     }
 
-    return std::make_tuple(std::move(to_greedy), std::move(to_dp));
+    auto res_dp = dp(mW, std::move(to_dp));
+    res_greedy.concat(res_dp);
 
-    // 2) delete some one
+    // std::cout << "with greedy + dp the remaining we got " << res_greedy.value << '\n';
+    
+    // return res_greedy;
+    
+    // 2) delete some from the beggining
+    // 2.1) dp which one to choose among first guys, then dp the remaining until we got all
 
+    Items to_dp_2;
+    for (std::int64_t idx = 0; idx <= critical_idx; idx++) {
+        to_dp_2.emplace_back(items[idx]);
+    }
+    // std::cout << to_dp_2.size() << " " << kMaxArraySize / original_mW << '\n';
+    Result res_dp_2;
+    if (to_dp_2.size() > kMaxArraySize / original_mW) {
+        // std::cout << "array is too big, fallback to the prefix sum!\n";
+        std::int64_t total_w = 0;
+        std::int64_t total_c = 0;
+        for (auto [c, w, i] : to_dp_2) {
+            total_c += c;
+            total_w += w;
+        }
 
+        total_c -= to_dp_2.back().cost;
+        total_w -= to_dp_2.back().weight;
+
+        std::int64_t answer = total_c;
+        std::int64_t index_to_exclude = to_dp_2.back().idx;
+
+        for (auto [c, w, i] : to_dp_2) {
+            if (total_w - w + to_dp_2.back().weight <= original_mW) {
+                if (answer < total_c - c + to_dp_2.back().cost) {
+                    index_to_exclude = i;
+                }
+                answer = std::max(answer, total_c - c + to_dp_2.back().cost);
+            }
+        }
+
+        for (auto [c, w, i] : to_dp_2) {
+            if (i == index_to_exclude) {
+                continue;
+            }
+            res_dp_2.value += c;
+            res_dp_2.weight += w;
+            res_dp_2.idxes.emplace_back(i);
+        }
+        // std::cout << res_dp_2.value << " " << res_dp_2.weight << "\n";
+    } else {
+        // std::cout << "we can dp the whole array! whooray!\n";
+        res_dp_2 = dp(original_mW, std::move(to_dp_2));
+        // std::cout << res_dp_2.value << " vs " << total_c << '\n';
+    }
+
+    
+    Items to_dp_3;
+    
+    for (std::int64_t idx = critical_idx + 1; idx < items.size() && to_dp_3.size() * (original_mW - res_dp_2.weight) < kMaxArraySize; idx++) {
+        to_dp_3.emplace_back(items[idx]);
+    }
+    auto res_dp_3 = dp(original_mW - res_dp_2.weight, std::move(to_dp_3));
+    res_dp_2.concat(res_dp_3);
+    if (res_dp_2.value > res_greedy.value) {
+        return res_dp_2;
+    }
+    return res_greedy;
 }
 
 bool validate(const Result& res, const std::vector<Item>& origin_items) {
@@ -289,11 +364,6 @@ bool validate(const Result& res, const std::vector<Item>& origin_items) {
 }
 
 int main() {
-    //niceon 31253920
-    //fuckkk 31253846
-    //smarty 31253846
-    //greedy 31253846
-    //optimy 31254410
     constexpr bool kIsForContest = true;
     // constexpr bool kIsForContest = true;
     auto [number, max_weight, items] = read<kIsForContest>();
@@ -311,10 +381,12 @@ int main() {
     // auto lhs = greedy_scaled(max_weight - res.weight, std::move(to_greedy));
     // res.concat(lhs);
 
-    auto [to_greedy, to_dp] = split_very_smart(std::move(items), max_weight);
-    auto res = greedy_scaled(max_weight, std::move(to_greedy));
-    auto lhs = dp(max_weight - res.weight, std::move(to_dp));
-    res.concat(lhs);
+    auto res = split_very_smart(std::move(items), max_weight);
+    auto greedy_idiot = greedy_scaled(max_weight, items_copy);
+    // auto [to_greedy, to_dp] = split_very_smart(std::move(items), max_weight);
+    // auto res = greedy_scaled(max_weight, std::move(to_greedy));
+    // auto lhs = dp(max_weight - res.weight, std::move(to_dp));
+    // res.concat(lhs);
     // std::int64_t total_elems = 0;
     // std::int64_t occupied_weight = 0;
     // auto res = Result(0, 0, {});
@@ -332,7 +404,14 @@ int main() {
     //     occupied_weight = res.weight;
     // }
 
-    output<kIsForContest>(res);
-    // auto dp_true = GreedyScaled(max_weight, items_copy);
-    // Output<kIsForContest>(dp_true);
+    
+
+    // auto dp_true = dp_fast(max_weight, items_copy);
+    // output<kIsForContest>(dp_true);
+
+    if (greedy_idiot.value > res.value) {
+        output<kIsForContest>(greedy_idiot);
+    } else {
+        output<kIsForContest>(res);
+    }
 }
