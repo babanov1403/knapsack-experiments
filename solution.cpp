@@ -2,7 +2,7 @@
 
 // #include "babanov_tqdm.hpp"
 
-constexpr std::size_t kTestNum = 11;
+constexpr std::size_t kTestNum = 1;
 const std::array<std::size_t, 11> optimums_answers = {
     31254410, 12697170, 13423811, 3825278, 2053822, 475581, 31391347, 12252874, 498092, 216522, 6
 };
@@ -374,9 +374,10 @@ class BranchNBoundImpl {
     using Set = std::vector<std::pair<std::int64_t, bool>>;
     struct Node {
         std::int64_t split_index_;
-        Node* take_index, *dont_take_index, *parent;
+        std::int64_t state_;
+        Node* take_index = nullptr, *dont_take_index = nullptr, *parent = nullptr;
 
-        Node(std::int64_t index) : split_index_(index) {}
+        Node(std::int64_t index) : split_index_(index), state_(0) {}
     };
 
 public:
@@ -385,74 +386,136 @@ public:
     }
 
     Result solve() noexcept {
-        auto init_index = get_split_index();
-        std::cout << "init index: " << init_index << '\n';
+        auto init_index = 0;
         head_ = new Node(init_index);
-        Node* p = head_;
-        Set set;
-        Node* curr = take_index(set, head_, init_index);
-        curr->parent = head_;
+        auto* curr = head_;
         std::int64_t record = -1;
+        Set set;
         while (curr) {
-            std::cout << "====================\n";
-            auto upper_bound = compute_upper_bound();
-            std::cout << "up_b: " << upper_bound << " record: " << record << '\n';
-            std::cout << "current_w_: " << current_w_ << " max_w: " << mW_ << '\n';
-            if (upper_bound <= record || current_w_ > mW_) {
-                // here we will be if:
-                // 1) upper_bound is less than record, that's bad, and we need to 
-                // go up, and we can go up from 2 cases: took, or not took current index
-                // if we took it, we don't need to to anything and just call dont_take_index
-                // otherwise we need to call drop_index
-                //
-                // 2) current_w_ > mW_, then we are 100% considered to take index, and 
-                // we need to call dont_take_index
-                std::cout << "consider dropping index because upper_bound <= record ";
-                std::cout << "or max_w exceeded!\n";
-                p = curr;
-                curr = go_up_special_case(set, curr);
-                continue;
-            }
-
-            if (current_c_ > record) {
-                std::cout << current_c_ << " " << record << '\n';
-                std::cout << "updating record!\n";
+            // std::cout << record << " " << optimums_answers[kTestNum - 1] << '\n';
+            auto index = curr->split_index_;
+            // std::cout << "==================================\n";
+            // std::cout << "in state: " << curr->state_ << '\n';
+            // if (curr->parent) {
+                // std::cout << "parent index: " << curr->parent->split_index_ << '\n';
+            // }
+            // std::cout << "current index: " << index << '\n';
+            // std::cout << "current_cost: " << current_c_ << " " << " current_w: " << current_w_ << '\n';
+            if (curr->state_ == 0) {
+                // i want to take curr->split_index_
+                if (current_w_ > mW_) {
+                    // std::cout << "weight is too much, " << current_w_ << " > " << mW_ << '\n';
+                    curr = backtrack(curr, set);
+                    continue;
+                }
+                auto upper_bound = compute_upper_bound();
+                if (upper_bound <= record) {
+                    // std::cout << "upperbound is less than a record " << record << '\n';
+                    record = update_record(record, set);
+                    curr = backtrack(curr, set);
+                    continue;
+                }
                 record = update_record(record, set);
-                std::cout << "new record is: " << record << '\n';
-            }
-            auto next_index = get_split_index();
-            curr->split_index_ = next_index;
-            std::cout << "next split index is: " << next_index << '\n';
-            if (next_index == -1) {
-                std::cout << "consider dropping index because it is -1\n";
-                curr = drop_index(set, curr);
-                continue;
-            }
-            //                     curr
-            // curr->take_index             curr->dont_take_index
-            std::cout << p->split_index_ << '\n';
-            std::cout << "p: " << (p == nullptr) << '\n';
-            std::cout << (p == curr->take_index) << '\n';
-            std::cout << (p == curr->dont_take_index) << '\n';
-            if (p && p == curr->take_index) {
-                std::cout << "went from take_index, next step is dont take\n";
-                p = curr;
-                curr = dont_take_index(set, curr, next_index);
-            } else if (p && p == curr->dont_take_index) {
-                std::cout << "went from dont take, next step is go to parent\n";
-                p = curr;
-                curr = drop_index(set, curr);
+                if (set.size() == items_->size()) {
+                    // std::cout << "encoutered leaf...\n";
+                    curr = backtrack(curr, set);
+                    continue;
+                }
+
+                // std::cout << "set size: " << set.size() << '\n';
+                // std::cout << "<------------------->\n";
+                // for (auto [i, is] : set) {
+                    // std::cout << i << " " << is << '\n';
+                // }
+                // std::cout << "<------------------->\n";
+                if (current_w_ + (*items_)[index].weight <= mW_) {
+                    auto next_index = get_split_index();
+                    
+                    curr->take_index = new Node(next_index);
+                    curr->take_index->parent = curr;
+
+                    set.emplace_back(next_index, 1);
+                    current_c_ += (*items_)[index].cost;
+                    current_w_ += (*items_)[index].weight;
+
+                    curr->state_ = 1;
+                    curr = curr->take_index;
+                } else {
+                    curr->state_ = 1;
+                }
+            } else if (curr->state_ == 1) {
+                // i checked if i take curr->split_index_, now i want to drop it
+                record = update_record(record, set);
+                // std::cout << "set size: " << set.size() << '\n';
+                // std::cout << "<------------------->\n";
+                // for (auto [i, is] : set) {
+                    // std::cout << i << " " << is << '\n';
+                // }
+                // std::cout << "<------------------->\n";
+                if (set.size() == items_->size()) {
+                    curr = backtrack(curr, set);
+                } else {
+                    auto next_index = get_split_index();
+                    curr->dont_take_index = new Node(next_index);
+                    curr->dont_take_index->parent = curr;
+
+                    set.emplace_back(next_index, 0);
+                    curr->state_ = 2;
+                    curr = curr->dont_take_index;
+                }
             } else {
-                std::cout << "went from parent, next step is go to take\n";
-                p = curr;
-                curr = take_index(set, curr, next_index);
+                record = update_record(record, set);
+                // i checked all variants in this subtree, go up
+                // std::cout << "in state 2:\n";
+                // std::cout << "before:\n";
+                // std::cout << "<------------------->\n";
+                // for (auto [i, is] : set) {
+                    // std::cout << i << " " << is << '\n';
+                // }
+                // std::cout << "<------------------->\n";
+                curr = backtrack(curr, set);
+                // std::cout << "after:\n";
+                // std::cout << "<------------------->\n";
+                // for (auto [i, is] : set) {
+                    // std::cout << i << " " << is << '\n';
+                // }
+                // std::cout << "<------------------->\n";
+            }
+        }
+        return res_;
+    }
+private:
+
+    Node* backtrack(Node* current, Set& set) {
+        if (!current) {
+            return nullptr;
+        }
+        auto* parent = current->parent;
+        if (parent) {
+            if (current->parent->take_index == current) {
+                auto index = current->parent->split_index_;
+                current_c_ -= (*items_)[index].cost;
+                current_w_ -= (*items_)[index].weight;
             }
         }
 
-        return res_;
+        if (!set.empty()) {
+            set.pop_back();
+        }
+
+        if (parent) {
+            if (parent->take_index == current) {
+                parent->take_index = nullptr;
+            }
+            if (parent->dont_take_index == current) {
+                parent->dont_take_index = nullptr;
+            }
+        }
+        delete current;
+        return parent;
     }
 
-private:
+
     std::int64_t update_record(std::int64_t record, Set const& set) {
         if (record < current_c_) {
             record = current_c_;
@@ -464,51 +527,6 @@ private:
             }
         }
         return record;
-    }
-
-    // must be called only after take_index!
-    Node* dont_take_index(Set& set, Node* curr, std::int64_t index) {
-        set.pop_back();
-        set.emplace_back(index, 0);
-
-        took_[index] = 1;
-        current_c_ -= (*items_)[index].cost;
-        current_w_ -= (*items_)[index].weight;
-        auto* prev = curr;
-        curr->dont_take_index = new Node(-1);
-        curr = curr->dont_take_index;
-        curr->parent = prev;
-        return curr;
-    }
-
-    Node* take_index(Set& set, Node* curr, std::int64_t index) {
-        set.emplace_back(index, 1);
-        took_[index] = 1;
-        current_c_ += (*items_)[index].cost;
-        current_w_ += (*items_)[index].weight;
-        auto* prev = curr;
-        curr->take_index = new Node(-1); // ?
-        curr = curr->take_index;
-        curr->parent = prev;
-        return curr;
-    }
-
-    // need to be called after dont_take_index
-    Node* drop_index(Set& set, Node* curr) {
-        curr = curr->parent;
-        took_[set.back().first] = 0;
-        set.pop_back();
-        return curr;
-    }
-
-    // special case
-    Node* go_up_special_case(Set& set, Node* curr) {
-        curr = curr->parent;
-        current_c_ -= (*items_)[set.back().first].cost;
-        current_w_ -= (*items_)[set.back().first].weight;
-        took_[set.back().first] = 0;
-        set.pop_back();
-        return curr;
     }
 
     std::int64_t get_split_index() const {
@@ -573,10 +591,6 @@ Result branch_and_bounds_babanov(Items items, std::int64_t mW) noexcept {
         }
         return ass > other_ass;
     });
-    std::int64_t idx = 0;
-    for (auto [c, w, i] : items) {
-        std::cout << idx++ << " " << c << " " << w << '\n';
-    }
     BranchNBoundImpl impl(items, mW);
     return impl.solve();
 }
@@ -629,8 +643,8 @@ int main() {
 
     
 
-    // auto dp_true = dp_fast(max_weight, items_copy);
-    // output<kIsForContest>(dp_true);
+    auto dp_true = dp_fast(max_weight, items_copy);
+    output<kIsForContest>(dp_true);
 
     if (greedy_idiot.value > res.value) {
         std::cout << "GREEDY WINS!\n";
