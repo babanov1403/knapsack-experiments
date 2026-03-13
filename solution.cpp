@@ -614,7 +614,7 @@ int main() {
     // res.concat(lhs);
 
 
-    // auto res = split_very_smart(std::move(items), max_weight);
+    auto res = split_very_smart(std::move(items), max_weight);
     auto greedy_idiot = greedy_scaled(max_weight, items_copy);
 
     // auto [to_greedy, to_dp] = split_very_smart(std::move(items), max_weight);
@@ -622,7 +622,7 @@ int main() {
     // auto lhs = dp(max_weight - res.weight, std::move(to_dp));
     // res.concat(lhs);
 
-    auto res = branch_and_bounds_babanov(items, max_weight);
+    // auto res = branch_and_bounds_babanov(items, max_weight);
 
     // std::int64_t total_elems = 0;
     // std::int64_t occupied_weight = 0;
@@ -643,8 +643,8 @@ int main() {
 
     
 
-    auto dp_true = dp_fast(max_weight, items_copy);
-    output<kIsForContest>(dp_true);
+    // auto dp_true = dp_fast(max_weight, items_copy);
+    // output<kIsForContest>(dp_true);
 
     if (greedy_idiot.value > res.value) {
         std::cout << "GREEDY WINS!\n";
