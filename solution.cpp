@@ -2,9 +2,9 @@
 
 // #include "babanov_tqdm.hpp"
 
-constexpr std::size_t kTestNum = 5;
-const std::array<std::size_t, 10> optimums_answers = {
-    31254410, 12697170, 13423811, 3825278, 2053822, 475581, 31391347, 12252874, 498092, 216522
+constexpr std::size_t kTestNum = 11;
+const std::array<std::size_t, 11> optimums_answers = {
+    31254410, 12697170, 13423811, 3825278, 2053822, 475581, 31391347, 12252874, 498092, 216522, 6
 };
 std::string path = std::to_string(kTestNum);
 
@@ -37,7 +37,7 @@ struct Result {
 };
 
 template <bool IsForContest = false>
-std::tuple<std::int64_t, std::int64_t, std::vector<Item>> read() {
+std::tuple<std::int64_t, std::int64_t, std::vector<Item>> read() noexcept {
     if constexpr (IsForContest) {
         std::int64_t number, max_weight;
         std::cin >> number >> max_weight;
@@ -64,7 +64,7 @@ std::tuple<std::int64_t, std::int64_t, std::vector<Item>> read() {
 }
 
 template <bool IsForContest = false>
-void output(const Result& result) {
+void output(const Result& result) noexcept {
     if constexpr (IsForContest) {
         std::cout << result.value << '\n';
         for (auto idx : result.idxes) {
@@ -90,7 +90,7 @@ void output(const Result& result) {
     }
 }
 
-Result dp_fast(std::int64_t mW, const std::vector<Item>& items) {
+Result dp_fast(std::int64_t mW, const std::vector<Item>& items) noexcept {
     std::int64_t n = items.size();
     std::vector<std::int64_t> dp(mW + 1, 0);
     std::vector<std::int64_t> dp_prev(mW + 1, 0);
@@ -109,7 +109,7 @@ Result dp_fast(std::int64_t mW, const std::vector<Item>& items) {
     return Result{std::max(dp.back(), dp_prev.back()), -1, {}};
 }
 
-auto normalize_indexes(std::vector<Item>&& items) {
+auto normalize_indexes(std::vector<Item>&& items) noexcept {
     std::vector<std::int64_t> func(items.size() + 1);
     for (std::int64_t idx = 0; idx < items.size(); idx++) {
         func[idx + 1] = items[idx].idx;
@@ -118,7 +118,7 @@ auto normalize_indexes(std::vector<Item>&& items) {
     return std::make_pair(std::move(items), std::move(func));
 }
 
-Result dp(std::int64_t mW, std::vector<Item>&& input_items) {
+Result dp(std::int64_t mW, std::vector<Item>&& input_items) noexcept {
     std::int64_t n = input_items.size();
     auto [items, true_idxes] = normalize_indexes(std::move(input_items));
     std::int64_t cols = mW + 1;
@@ -147,7 +147,7 @@ Result dp(std::int64_t mW, std::vector<Item>&& input_items) {
     return Result(max_val, total_w, std::move(selected));
 }
 
-Result greedy_scaled(std::int64_t mW, std::vector<Item> items) {
+Result greedy_scaled(std::int64_t mW, std::vector<Item> items) noexcept {
     std::ranges::sort(items, std::greater<>{}, [](const Item& item) {
         return item.cost * 1. / item.weight;
     });
@@ -163,7 +163,7 @@ Result greedy_scaled(std::int64_t mW, std::vector<Item> items) {
     return {total_c, total_w, std::move(idxes)};
 }
 
-Result make_result_from_picked(const std::vector<Item>& picked_items) {
+Result make_result_from_picked(const std::vector<Item>& picked_items) noexcept {
     std::int64_t total_c = 0;
     std::int64_t total_w = 0;
     std::vector<std::int64_t> indexes;
@@ -177,7 +177,7 @@ Result make_result_from_picked(const std::vector<Item>& picked_items) {
     return Result(total_c, total_w, std::move(indexes));
 }
 
-auto median_exp(const Items& items) {
+auto median_exp(const Items& items) noexcept {
     double median = 0;
     for (auto [c, w, i] : items) {
         median += c * 1. / w;
@@ -185,7 +185,7 @@ auto median_exp(const Items& items) {
     return median / items.size();
 }
 
-auto split(Items&& items, std::int64_t mW) {
+auto split(Items&& items, std::int64_t mW) noexcept {
     double good = median_exp(items);
     double bad = 0.5 * median_exp(items);
     Items to_greedy;
@@ -212,7 +212,7 @@ auto split(Items&& items, std::int64_t mW) {
     return std::make_tuple(std::move(to_greedy), std::move(to_dp), std::move(to_pohui));
 }
 
-auto split_smart(Items&& items, std::int64_t mW) {
+auto split_smart(Items&& items, std::int64_t mW) noexcept {
     std::size_t kMaxArraySize = 64 * 1024ll * 1024 / mW; // n * mW
     std::ranges::sort(items, std::greater<>{}, [](const Item& item) {
         return item.cost * 1. / item.weight;
@@ -237,7 +237,7 @@ auto split_smart(Items&& items, std::int64_t mW) {
     return std::make_tuple(std::move(to_dp), std::move(to_greedy));
 }
 
-auto split_very_smart(Items&& items, std::int64_t mW) {
+auto split_very_smart(Items&& items, std::int64_t mW) noexcept {
     const std::int64_t original_mW = mW; 
     std::size_t kMaxArraySize = 64 * 1024ll * 1024; // n * mW
     std::ranges::sort(items, [](const Item& lhs, const Item& rhs) {
@@ -270,8 +270,6 @@ auto split_very_smart(Items&& items, std::int64_t mW) {
     // or do not take items[critical_idx] and trying to fill other
 
     // 1) do not take items[critical_idx], take items to dp until we can
-
-    // 1.1)
     mW -= total_w;
     Items to_dp;
     
@@ -297,6 +295,15 @@ auto split_very_smart(Items&& items, std::int64_t mW) {
     Result res_dp_2;
     if (to_dp_2.size() > kMaxArraySize / original_mW) {
         // std::cout << "array is too big, fallback to the prefix sum!\n";
+        std::cout << to_dp_2.size() << "\n";
+        std::int64_t max = -1;
+        std::int64_t min = 1e9;
+        for (auto [c, w, i] : to_dp_2) {
+            max = std::max(max, w);
+            min = std::min(min, w);
+        }
+
+        std::cout << "max: " << max << " min: " << min << '\n'; 
         std::int64_t total_w = 0;
         std::int64_t total_c = 0;
         for (auto [c, w, i] : to_dp_2) {
@@ -348,7 +355,7 @@ auto split_very_smart(Items&& items, std::int64_t mW) {
     return res_greedy;
 }
 
-bool validate(const Result& res, const std::vector<Item>& origin_items) {
+bool validate(const Result& res, const std::vector<Item>& origin_items) noexcept {
     std::int64_t c = 0, w = 0;
     for (auto idx : res.idxes) {
         c += origin_items[idx - 1].cost;
@@ -363,8 +370,219 @@ bool validate(const Result& res, const std::vector<Item>& origin_items) {
     return true;
 }
 
+class BranchNBoundImpl {
+    using Set = std::vector<std::pair<std::int64_t, bool>>;
+    struct Node {
+        std::int64_t split_index_;
+        Node* take_index, *dont_take_index, *parent;
+
+        Node(std::int64_t index) : split_index_(index) {}
+    };
+
+public:
+    BranchNBoundImpl(Items const& items, std::int64_t mW) : mW_(mW), items_(&items) {
+        took_.resize(items_->size(), 0);
+    }
+
+    Result solve() noexcept {
+        auto init_index = get_split_index();
+        std::cout << "init index: " << init_index << '\n';
+        head_ = new Node(init_index);
+        Node* p = head_;
+        Set set;
+        Node* curr = take_index(set, head_, init_index);
+        curr->parent = head_;
+        std::int64_t record = -1;
+        while (curr) {
+            std::cout << "====================\n";
+            auto upper_bound = compute_upper_bound();
+            std::cout << "up_b: " << upper_bound << " record: " << record << '\n';
+            std::cout << "current_w_: " << current_w_ << " max_w: " << mW_ << '\n';
+            if (upper_bound <= record || current_w_ > mW_) {
+                // here we will be if:
+                // 1) upper_bound is less than record, that's bad, and we need to 
+                // go up, and we can go up from 2 cases: took, or not took current index
+                // if we took it, we don't need to to anything and just call dont_take_index
+                // otherwise we need to call drop_index
+                //
+                // 2) current_w_ > mW_, then we are 100% considered to take index, and 
+                // we need to call dont_take_index
+                std::cout << "consider dropping index because upper_bound <= record ";
+                std::cout << "or max_w exceeded!\n";
+                p = curr;
+                curr = go_up_special_case(set, curr);
+                continue;
+            }
+
+            if (current_c_ > record) {
+                std::cout << current_c_ << " " << record << '\n';
+                std::cout << "updating record!\n";
+                record = update_record(record, set);
+                std::cout << "new record is: " << record << '\n';
+            }
+            auto next_index = get_split_index();
+            curr->split_index_ = next_index;
+            std::cout << "next split index is: " << next_index << '\n';
+            if (next_index == -1) {
+                std::cout << "consider dropping index because it is -1\n";
+                curr = drop_index(set, curr);
+                continue;
+            }
+            //                     curr
+            // curr->take_index             curr->dont_take_index
+            std::cout << p->split_index_ << '\n';
+            std::cout << "p: " << (p == nullptr) << '\n';
+            std::cout << (p == curr->take_index) << '\n';
+            std::cout << (p == curr->dont_take_index) << '\n';
+            if (p && p == curr->take_index) {
+                std::cout << "went from take_index, next step is dont take\n";
+                p = curr;
+                curr = dont_take_index(set, curr, next_index);
+            } else if (p && p == curr->dont_take_index) {
+                std::cout << "went from dont take, next step is go to parent\n";
+                p = curr;
+                curr = drop_index(set, curr);
+            } else {
+                std::cout << "went from parent, next step is go to take\n";
+                p = curr;
+                curr = take_index(set, curr, next_index);
+            }
+        }
+
+        return res_;
+    }
+
+private:
+    std::int64_t update_record(std::int64_t record, Set const& set) {
+        if (record < current_c_) {
+            record = current_c_;
+            res_.value = record;
+            res_.weight = current_w_;
+            res_.idxes.clear();
+            for (auto [idx, is_taken] : set) {
+                res_.idxes.emplace_back((*items_)[idx].idx);
+            }
+        }
+        return record;
+    }
+
+    // must be called only after take_index!
+    Node* dont_take_index(Set& set, Node* curr, std::int64_t index) {
+        set.pop_back();
+        set.emplace_back(index, 0);
+
+        took_[index] = 1;
+        current_c_ -= (*items_)[index].cost;
+        current_w_ -= (*items_)[index].weight;
+        auto* prev = curr;
+        curr->dont_take_index = new Node(-1);
+        curr = curr->dont_take_index;
+        curr->parent = prev;
+        return curr;
+    }
+
+    Node* take_index(Set& set, Node* curr, std::int64_t index) {
+        set.emplace_back(index, 1);
+        took_[index] = 1;
+        current_c_ += (*items_)[index].cost;
+        current_w_ += (*items_)[index].weight;
+        auto* prev = curr;
+        curr->take_index = new Node(-1); // ?
+        curr = curr->take_index;
+        curr->parent = prev;
+        return curr;
+    }
+
+    // need to be called after dont_take_index
+    Node* drop_index(Set& set, Node* curr) {
+        curr = curr->parent;
+        took_[set.back().first] = 0;
+        set.pop_back();
+        return curr;
+    }
+
+    // special case
+    Node* go_up_special_case(Set& set, Node* curr) {
+        curr = curr->parent;
+        current_c_ -= (*items_)[set.back().first].cost;
+        current_w_ -= (*items_)[set.back().first].weight;
+        took_[set.back().first] = 0;
+        set.pop_back();
+        return curr;
+    }
+
+    std::int64_t get_split_index() const {
+        // 1) pick up all guys greedy
+        std::int64_t total_w = current_w_;
+        std::int64_t split_idx = -1;
+        for (std::int64_t idx = 0; idx < items_->size(); idx++) {
+            auto [c, w, i] = (*items_)[idx];
+            if (took_[idx]) {
+                continue;
+            }
+
+            if (total_w + w <= mW_) {
+                total_w += w;
+            } else {
+                split_idx = idx;
+                break;
+            }
+        }
+        return split_idx;
+    }
+
+    std::int64_t compute_upper_bound() const {
+        std::int64_t total_w = current_w_;
+        std::int64_t bound = current_c_;
+        for (std::int64_t idx = 0; idx < items_->size(); idx++) {
+            auto [c, w, i] = (*items_)[idx];
+            if (took_[idx]) {
+                continue;
+            }
+
+            if (total_w + w <= mW_) {
+                bound += c;
+                total_w += w;
+            } else {
+                bound += static_cast<std::int64_t>( (static_cast<double>(mW_ - current_w_) / w) * c);
+                break;
+            }
+        }
+        return bound;
+    }
+    
+private:
+    // upper_bound_ - maximum sum that we can obtain using items from this subset, how?
+    // record_ - best value among all previous sets 
+    Node* head_;
+    std::int64_t current_w_ = 0;
+    std::int64_t current_c_ = 0;
+    Result res_;
+    const std::int64_t mW_;
+    std::vector<char> took_;
+    const Items* items_;
+};
+
+Result branch_and_bounds_babanov(Items items, std::int64_t mW) noexcept {
+    std::ranges::sort(items, [](const Item& lhs, const Item& rhs) {
+        double ass = lhs.cost * 1. / lhs.weight;
+        double other_ass = rhs.cost * 1. / rhs.weight;
+
+        if (ass == other_ass) {
+            return lhs.cost > rhs.cost;
+        }
+        return ass > other_ass;
+    });
+    std::int64_t idx = 0;
+    for (auto [c, w, i] : items) {
+        std::cout << idx++ << " " << c << " " << w << '\n';
+    }
+    BranchNBoundImpl impl(items, mW);
+    return impl.solve();
+}
+
 int main() {
-    constexpr bool kIsForContest = true;
+    constexpr bool kIsForContest = false;
     // constexpr bool kIsForContest = true;
     auto [number, max_weight, items] = read<kIsForContest>();
     auto items_copy = items;
@@ -381,12 +599,17 @@ int main() {
     // auto lhs = greedy_scaled(max_weight - res.weight, std::move(to_greedy));
     // res.concat(lhs);
 
-    auto res = split_very_smart(std::move(items), max_weight);
+
+    // auto res = split_very_smart(std::move(items), max_weight);
     auto greedy_idiot = greedy_scaled(max_weight, items_copy);
+
     // auto [to_greedy, to_dp] = split_very_smart(std::move(items), max_weight);
     // auto res = greedy_scaled(max_weight, std::move(to_greedy));
     // auto lhs = dp(max_weight - res.weight, std::move(to_dp));
     // res.concat(lhs);
+
+    auto res = branch_and_bounds_babanov(items, max_weight);
+
     // std::int64_t total_elems = 0;
     // std::int64_t occupied_weight = 0;
     // auto res = Result(0, 0, {});
@@ -410,8 +633,12 @@ int main() {
     // output<kIsForContest>(dp_true);
 
     if (greedy_idiot.value > res.value) {
-        output<kIsForContest>(greedy_idiot);
+        std::cout << "GREEDY WINS!\n";
+        
     } else {
-        output<kIsForContest>(res);
+        std::cout << "BABANOV WINS!\n";
+        
     }
+    // output<kIsForContest>(greedy_idiot);
+    output<kIsForContest>(res);
 }
