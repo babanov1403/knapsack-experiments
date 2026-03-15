@@ -3,7 +3,7 @@
 // #include "babanov_tqdm.hpp"
 
 // 31254410
-constexpr std::size_t kTestNum = 2;
+constexpr std::size_t kTestNum = 10;
 const std::array<std::size_t, 11> optimums_answers = {
     31254410, 12697170, 13423811, 3825278, 2053822, 475581, 31391347, 12252874, 498092, 216522, 6
 };
@@ -100,7 +100,16 @@ void output(const Result& result) noexcept {
     }
 }
 
-Result dp_fast(std::int64_t mW, const std::vector<Item>& items) noexcept {
+Result dp_fast(std::int64_t mW, std::vector<Item>&& items) noexcept {
+    std::ranges::sort(items, [](const Item& lhs, const Item& rhs) {
+        double ass = lhs.cost * 1. / lhs.weight;
+        double other_ass = rhs.cost * 1. / rhs.weight;
+
+        if (ass == other_ass) {
+            return lhs.cost > rhs.cost;
+        }
+        return ass > other_ass;
+    });
     std::int64_t n = items.size();
     std::vector<std::int64_t> dp(mW + 1, 0);
     std::vector<std::int64_t> dp_prev(mW + 1, 0);
@@ -128,27 +137,61 @@ auto normalize_indexes(std::vector<Item>&& items) noexcept {
     return std::make_pair(std::move(items), std::move(func));
 }
 
+Result dpk(std::int64_t mW, std::vector<Item>&& items) noexcept {
+    std::int64_t n = items.size();
+    // auto [items, true_idxes] = normalize_indexes(std::move(input_items));
+    std::vector<std::pair<std::int64_t, std::bitset<100'000>>> dp(mW + 1, {0, {}});
+    std::vector<std::pair<std::int64_t, std::bitset<100'000>>> dp_prev(mW + 1, {0, {}});
+    for (int k = 0; k < n; k++) {
+        auto [icost, iw, _] = items[k];
+        for (std::int64_t w = 0; w <= mW; w++) {
+            dp[w] = std::move(dp_prev[w]);
+            if (w - iw >= 0) {
+                if (dp[w].first < dp_prev[w - iw].first + icost) {
+                    dp[w].first = dp_prev[w - iw].first + icost;
+                    dp[w].second = std::move(dp_prev[w - iw].second);
+                    dp[w].second[k] = 1; 
+                }
+            }
+        }
+        std::swap(dp, dp_prev);
+    }
+
+    if (dp.back().first < dp_prev.back().first) {
+        std::swap(dp, dp_prev);
+    }
+
+    Result res;
+    res.value = dp.back().first;
+    res.weight = mW;
+    for (int k = 0; k < n; k++) {
+        res.idxes.emplace_back(items[k].idx);
+    }
+
+    return res;
+}
+
 Result dp(std::int64_t mW, std::vector<Item>&& input_items) noexcept {
     std::int64_t n = input_items.size();
     auto [items, true_idxes] = normalize_indexes(std::move(input_items));
     std::int64_t cols = mW + 1;
-    std::vector<std::int32_t> dp((mW + 1) * (n + 1), 0); // N x M => [idx][jdx] = [idx * M + jdx]
+    std::vector<std::int32_t> andp((mW + 1) * (n + 1), 0); // N x M => [idx][jdx] = [idx * M + jdx]
     for (int k = 1; k <= n; k++) {
         auto [icost, iw, _] = items[k - 1];
         for (std::int64_t w = 0; w <= mW; w++) {
-            dp[k * cols + w] = dp[(k - 1) * cols + w];
+            andp[k * cols + w] = andp[(k - 1) * cols + w];
             if (w - iw >= 0) {
-                dp[k * cols + w] = std::max(dp[(k - 1) * cols + w - iw] + static_cast<std::int32_t>(icost), dp[k * cols + w]);
+                andp[k * cols + w] = std::max(andp[(k - 1) * cols + w - iw] + static_cast<std::int32_t>(icost), andp[k * cols + w]);
             }
         }
     }
 
-    std::int64_t max_val = dp.back();
+    std::int64_t max_val = andp.back();
     std::vector<std::int64_t> selected;
     std::int64_t w = mW;
     std::int64_t total_w = 0;
     for (std::int64_t idx = n; idx >= 1; idx--) {
-        if (dp[idx * cols + w] != dp[(idx - 1) * cols + w]) {
+        if (andp[idx * cols + w] != andp[(idx - 1) * cols + w]) {
             selected.push_back(true_idxes[idx]);
             total_w += items[idx - 1].weight;
             w -= items[idx - 1].weight;
@@ -334,7 +377,6 @@ auto kill_the_fattest(std::vector<Item>&& items, const std::int64_t mW) noexcept
         }
         return ass > other_ass;
     });
-
     const std::size_t n = items.size();
 
     // 0 - didnt take, 1 - took, 2 - force not take
@@ -553,7 +595,7 @@ auto split_very_very_smart(Items&& items, std::int64_t mW) noexcept {
 
 auto split_smart_as_fuck(Items&& items, std::int64_t mW) noexcept {
     const std::int64_t original_mW = mW; 
-    std::size_t kMaxArraySize = 64 * 1024ll * 1024; // n * mW
+    std::size_t kMaxArraySize = 120 * 1024ll * 1024; // n * mW
     std::ranges::sort(items, [](const Item& lhs, const Item& rhs) {
         double ass = lhs.cost * 1. / lhs.weight;
         double other_ass = rhs.cost * 1. / rhs.weight;
@@ -581,16 +623,22 @@ auto split_smart_as_fuck(Items&& items, std::int64_t mW) noexcept {
     for (std::int64_t idx = 0; idx < critical_idx; idx++) {
         to_dp_2.emplace_back(items[idx]);
     }
-    // std::cout << to_dp_2.size() << " " << kMaxArraySize / original_mW << '\n';
     Result res_dp_2;
-    
     if (to_dp_2.size() > kMaxArraySize / original_mW) {
         // std::cout << "array is too big, fallback to babanov greedy!\n";
         Result best;
         // exclude or the most heaviest guys, or the last, or the valuest
-
-        for (std::int64_t babanov_value = 1; babanov_value <= 5; babanov_value++) {
+        for (std::int64_t babanov_value = 1; babanov_value < to_dp_2.size(); babanov_value++) {
             Result fat_guys, last_guys, value_guys;
+            std::ranges::sort(to_dp_2, [](const Item& lhs, const Item& rhs) {
+                double ass = lhs.cost * 1. / lhs.weight;
+                double other_ass = rhs.cost * 1. / rhs.weight;
+
+                if (ass == other_ass) {
+                    return lhs.cost > rhs.cost;
+                }
+                return ass > other_ass;
+            });
 
             const std::int64_t items_to_exlude_cnt = std::min(static_cast<std::int64_t>(to_dp_2.size()), babanov_value);
             std::unordered_set<std::int64_t> excl_ind_last;
@@ -612,50 +660,89 @@ auto split_smart_as_fuck(Items&& items, std::int64_t mW) noexcept {
                 excl_ind_value.emplace(to_dp_2[idx].idx);
             }
 
+            Items fat_dp, last_dp, value_dp;
+
             for (auto [c, w, i] : to_dp_2) {
                 if (!excl_ind_last.contains(i)) {
                     last_guys.value += c;
                     last_guys.weight += w;
                     last_guys.idxes.emplace_back(i);
+                } else {
+                    last_dp.emplace_back(c, w, i);
                 }
 
                 if (!excl_ind_fat.contains(i)) {
                     fat_guys.value += c;
                     fat_guys.weight += w;
                     fat_guys.idxes.emplace_back(i);
+                } else {
+                    fat_dp.emplace_back(c, w, i);
                 }
 
                 if (!excl_ind_value.contains(i)) {
                     value_guys.value += c;
                     value_guys.weight += w;
                     value_guys.idxes.emplace_back(i);
+                } else { 
+                    value_dp.emplace_back(c, w, i);
                 }
             }
 
-            Items fat_dp;
-        
-            for (std::int64_t idx = critical_idx + 1; idx < items.size() && fat_dp.size() * (original_mW - fat_guys.weight) < kMaxArraySize; idx++) {
+            Result greedy_latter;
+            std::int64_t last_item_idx = 0;
+            
+            for (std::int64_t idx = critical_idx; idx < items.size() && fat_dp.size() * (original_mW - fat_guys.weight) < kMaxArraySize; idx++) {
                 fat_dp.emplace_back(items[idx]);
+                last_item_idx = idx;
             }
             auto res_dp_3 = dp(original_mW - fat_guys.weight, std::move(fat_dp));
+
             fat_guys.concat(res_dp_3);
+
+            for (std::int64_t idx = last_item_idx + 1; idx < items.size(); idx++) {
+                auto [c, w, i] = items[idx];
+                if (fat_guys.weight + w <= original_mW) {
+                    fat_guys.weight += w;
+                    fat_guys.value += c;
+                    fat_guys.idxes.emplace_back(i);
+                }
+            }
+
             //////////////////////////////////////////////
 
-            Items last_dp;
-            for (std::int64_t idx = critical_idx + 1; idx < items.size() && last_dp.size() * (original_mW - last_guys.weight) < kMaxArraySize; idx++) {
+            for (std::int64_t idx = critical_idx; idx < items.size() && last_dp.size() * (original_mW - last_guys.weight) < kMaxArraySize; idx++) {
                 last_dp.emplace_back(items[idx]);
+                last_item_idx = idx;
             }
             auto res_dp_4 = dp(original_mW - last_guys.weight, std::move(last_dp));
             last_guys.concat(res_dp_4);
+
+            for (std::int64_t idx = last_item_idx + 1; idx < items.size(); idx++) {
+                auto [c, w, i] = items[idx];
+                if (last_guys.weight + w <= original_mW) {
+                    last_guys.weight += w;
+                    last_guys.value += c;
+                    last_guys.idxes.emplace_back(i);
+                }
+            }
             //////////////////////////////////////////////
 
-            Items value_dp;
-        
-            for (std::int64_t idx = critical_idx + 1; idx < items.size() && value_dp.size() * (original_mW - value_guys.weight) < kMaxArraySize; idx++) {
+            for (std::int64_t idx = critical_idx; idx < items.size() && value_dp.size() * (original_mW - value_guys.weight) < kMaxArraySize; idx++) {
                 value_dp.emplace_back(items[idx]);
+                last_item_idx = idx;
             }
             auto res_dp_5 = dp(original_mW - value_guys.weight, std::move(value_dp));
             value_guys.concat(res_dp_5);
+
+            for (std::int64_t idx = last_item_idx + 1; idx < items.size(); idx++) {
+                auto [c, w, i] = items[idx];
+                if (value_guys.weight + w <= original_mW) {
+                    value_guys.weight += w;
+                    value_guys.value += c;
+                    value_guys.idxes.emplace_back(i);
+                }
+            }
+
             best.max(fat_guys).max(last_guys).max(value_guys);
         }
         
@@ -714,8 +801,8 @@ private:
     size_t offset;
 };
 
-alignas(std::max_align_t) static char arena_buffer[512 * 1024 * 1024];
-static StackArena arena(arena_buffer, sizeof(arena_buffer));
+// alignas(std::max_align_t) static char arena_buffer[512 * 1024 * 1024];
+// static StackArena arena(arena_buffer, sizeof(arena_buffer));
 
 
 class BranchNBoundImpl {
@@ -727,12 +814,12 @@ class BranchNBoundImpl {
 
         Node(std::int64_t index) : split_index_(index), state_(0) {}
 
-        static void* operator new(size_t size) {
-            return arena.alloc(size, alignof(Node));
-        }
+        // static void* operator new(size_t size) {
+        //     return arena.alloc(size, alignof(Node));
+        // }
 
-        static void operator delete(void* ptr) noexcept {
-        }
+        // static void operator delete(void* ptr) noexcept {
+        // }
     };
 
 public:
@@ -1050,16 +1137,22 @@ int main() {
     // Result res_2 = split_very_smart(std::move(items_copy), max_weight);
     // Result res_3 = split_very_very_smart(std::move(other_copy), max_weight);
 
-    // auto res_4 = split_smart_as_fuck(std::move(other_other_copy), max_weight);
+    auto res_4 = split_smart_as_fuck(std::move(other_other_copy), max_weight);
+
+    // Items swiped;
+    // for (std::int64_t idx = 0; idx < other_other_copy.size(); idx++) {
+        // swiped.emplace_back(other_other_copy[idx]);
+    // }
+    // auto res_right_swipe = split_smart_as_fuck(std::move(swiped), max_weight);
 
     // auto [to_greedy, to_dp] = split_very_smart(std::move(items), max_weight);
     // auto res = greedy_scaled(max_weight, std::move(to_greedy));
     // auto lhs = dp(max_weight - res.weight, std::move(to_dp));
     // res.concat(lhs);
 
-    auto bnb = branch_and_bounds_babanov(items, max_weight);
-    validate(bnb, items);
-    output<kIsForContest>(bnb);
+    // auto bnb = branch_and_bounds_babanov(items, max_weight);
+    // validate(bnb, items);
+    // output<kIsForContest>(bnb);
     // std::int64_t total_elems = 0;
     // std::int64_t occupied_weight = 0;
     // auto res = Result(0, 0, {});
@@ -1079,10 +1172,11 @@ int main() {
 
     
 
-    // auto dp_true = dp_fast(max_weight, items_copy);
+    // auto dp_true = dp_fast(max_weight, std::move(items_copy));
     // output<kIsForContest>(dp_true);
 
-
+    // auto dp_true_ans = dp_fast_bitset(max_weight, std::move(items_copy));
+    // output<kIsForContest>(dp_true_ans);
 
     // if (greedy_idiot.value > res.value) {
     //     std::cout << "GREEDY WINS!\n";
@@ -1092,13 +1186,13 @@ int main() {
         
     // }
 
-    // auto& maximum = res.max(res_2).max(res_3).max(res_4).max(greedy_idiot);
+    // auto& maximum = res.max(res_2).max(res_3).max(res_4);
     // output<kIsForContest>(maximum);
-    
+    // output<kIsForContest>(res_right_swipe);
     
     // output<kIsForContest>(greedy_idiot);
     // output<kIsForContest>(res);
     // output<kIsForContest>(res_2);
     // output<kIsForContest>(res_3);
-    // output<kIsForContest>(res_4);
+    output<kIsForContest>(res_4);
 }
