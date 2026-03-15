@@ -690,6 +690,34 @@ bool validate(const Result& res, const std::vector<Item>& origin_items) noexcept
     return true;
 }
 
+
+class StackArena {
+public:
+    StackArena(void* buf, size_t cap)
+        : buffer(static_cast<char*>(buf)), capacity(cap), offset(0) {}
+
+    void* alloc(size_t size, size_t alignment) {
+        size_t start = (offset + alignment - 1) & ~(alignment - 1);
+        if (start + size > capacity) {
+            throw std::bad_alloc();
+        }
+        offset = start + size;
+        return buffer + start;
+    }
+
+    void reset() {
+        offset = 0;
+    }
+private:
+    char* buffer;
+    size_t capacity;
+    size_t offset;
+};
+
+alignas(std::max_align_t) static char arena_buffer[512 * 1024 * 1024];
+static StackArena arena(arena_buffer, sizeof(arena_buffer));
+
+
 class BranchNBoundImpl {
     using Set = std::vector<std::pair<std::int64_t, bool>>;
     struct Node {
@@ -698,6 +726,13 @@ class BranchNBoundImpl {
         Node* take_index = nullptr, *dont_take_index = nullptr, *parent = nullptr;
 
         Node(std::int64_t index) : split_index_(index), state_(0) {}
+
+        static void* operator new(size_t size) {
+            return arena.alloc(size, alignof(Node));
+        }
+
+        static void operator delete(void* ptr) noexcept {
+        }
     };
 
 public:
@@ -711,35 +746,22 @@ public:
         auto* curr = head_;
         std::int64_t record = -1;
         Set set;
-        std::int64_t kMaxIters = 1000000;
-        while (curr && kMaxIters-- > 0) {
-
-            // std::cout << record << " " << optimums_answers[
-            // kTestNum - 1] << '\n';
+        std::int64_t kMaxIter = 1'000'00;
+        while (curr && kMaxIter-- > 0) {
             auto index = curr->split_index_;
-            // std::cout << "==================================\n";
-            // std::cout << "in state: " << curr->state_ << '\n';
-            // if (curr->parent) {
-                // std::cout << "parent index: " << curr->parent->split_index_ << '\n';
-            // }
-            // std::cout << "current index: " << index << '\n';
-            // std::cout << "current_cost: " << current_c_ << " " << " current_w: " << current_w_ << '\n';
             if (curr->state_ == 0) {
                 // i want to take curr->split_index_
                 if (current_w_ > mW_) {
-                    // std::cout << "weight is too much, " << current_w_ << " > " << mW_ << '\n';
                     curr = backtrack(curr, set);
                     continue;
                 }
                 auto upper_bound = compute_upper_bound();
                 if (upper_bound <= record) {
-                    // std::cout << "upperbound is less than a record " << record << '\n';
                     curr = backtrack(curr, set);
                     continue;
                 }
                 record = update_record(record, set);
                 if (set.size() == items_->size()) {
-                    // std::cout << "encoutered leaf...\n";
                     curr = backtrack(curr, set);
                     continue;
                 }
@@ -749,43 +771,45 @@ public:
                     auto next_index = get_split_index();
                     if (next_index == -1) {
                         // i can took all the remaining guys
-                        std::int64_t curr_val = current_c_;
-                        for (std::int64_t idx = 0; idx < items_->size(); idx++) {
-                            if (took_[idx]) {
-                                continue;
-                            }
-                            curr_val += (*items_)[idx].cost;
-                        }
+                        // std::int64_t curr_val = current_c_;
+                        // for (std::int64_t idx = 0; idx < items_->size(); idx++) {
+                        //     if (took_[idx]) {
+                        //         continue;
+                        //     }
+                        //     curr_val += (*items_)[idx].cost;
+                        // }
 
-                        if (curr_val > record) {
-                            res_.value = current_c_;
-                            res_.weight = current_w_;
-                            res_.idxes.clear();
-                            for (auto [idx, is_taken] : set) {
-                                if (is_taken) {
-                                    res_.idxes.emplace_back((*items_)[idx].idx);
-                                }
-                            }
+                        // if (curr_val > record) {
+                        //     res_.value = current_c_;
+                        //     res_.weight = current_w_;
+                        //     res_.idxes.clear();
+                        //     for (auto [idx, is_taken] : set) {
+                        //         if (is_taken) {
+                        //             res_.idxes.emplace_back((*items_)[idx].idx);
+                        //         }
+                        //     }
                             
-                            for (std::int64_t idx = 0; idx < items_->size(); idx++) {
-                                if (took_[idx]) {
-                                    continue;
-                                }
-                                res_.value += (*items_)[idx].cost;
-                                res_.weight += (*items_)[idx].weight;
-                                res_.idxes.emplace_back((*items_)[idx].idx);
-                            }
+                        //     for (std::int64_t idx = 0; idx < items_->size(); idx++) {
+                        //         if (took_[idx]) {
+                        //             continue;
+                        //         }
+                        //         res_.value += (*items_)[idx].cost;
+                        //         res_.weight += (*items_)[idx].weight;
+                        //         res_.idxes.emplace_back((*items_)[idx].idx);
+                        //     }
 
-                            record = res_.value;
-                        }
+                        //     record = res_.value;
+                        //     std::cout << record << '\n';
+                        // }
+                        std::cout << "index\n";
                         curr = backtrack(curr, set);
                         continue;
                     }
                     curr->take_index = new Node(next_index);
                     curr->take_index->parent = curr;
 
-                    set.emplace_back(next_index, 1);
-                    took_[next_index] = 1;
+                    set.emplace_back(index, 1);
+                    took_[index] = 1;
 
                     current_c_ += (*items_)[index].cost;
                     current_w_ += (*items_)[index].weight;
@@ -798,56 +822,51 @@ public:
             } else if (curr->state_ == 1) {
                 // i checked if i take curr->split_index_, now i want to drop it
                 record = update_record(record, set);
-                // std::cout << "set size: " << set.size() << '\n';
-                // std::cout << "<------------------->\n";
-                // for (auto [i, is] : set) {
-                    // std::cout << i << " " << is << '\n';
-                // }
-                // std::cout << "<------------------->\n";
                 if (set.size() == items_->size()) {
                     curr = backtrack(curr, set);
                 } else {
                     auto next_index = get_split_index();
                     if (next_index == -1) {
                         // i can took all the remaining guys
-                        std::int64_t curr_val = current_c_;
-                        for (std::int64_t idx = 0; idx < items_->size(); idx++) {
-                            if (took_[idx]) {
-                                continue;
-                            }
-                            curr_val += (*items_)[idx].cost;
-                        }
+                        // std::int64_t curr_val = current_c_;
+                        // for (std::int64_t idx = 0; idx < items_->size(); idx++) {
+                        //     if (took_[idx]) {
+                        //         continue;
+                        //     }
+                        //     curr_val += (*items_)[idx].cost;
+                        // }
 
-                        if (curr_val > record) {
-                            res_.value = current_c_;
-                            res_.weight = current_w_;
-                            res_.idxes.clear();
-                            for (auto [idx, is_taken] : set) {
-                                if (is_taken) {
-                                    res_.idxes.emplace_back((*items_)[idx].idx);
-                                }
-                            }
+                        // if (curr_val > record) {
+                        //     res_.value = current_c_;
+                        //     res_.weight = current_w_;
+                        //     res_.idxes.clear();
+                        //     for (auto [idx, is_taken] : set) {
+                        //         if (is_taken) {
+                        //             res_.idxes.emplace_back((*items_)[idx].idx);
+                        //         }
+                        //     }
                             
-                            for (std::int64_t idx = 0; idx < items_->size(); idx++) {
-                                if (took_[idx]) {
-                                    continue;
-                                }
-                                res_.value += (*items_)[idx].cost;
-                                res_.weight += (*items_)[idx].weight;
-                                res_.idxes.emplace_back((*items_)[idx].idx);
-                            }
+                        //     for (std::int64_t idx = 0; idx < items_->size(); idx++) {
+                        //         if (took_[idx]) {
+                        //             continue;
+                        //         }
+                        //         res_.value += (*items_)[idx].cost;
+                        //         res_.weight += (*items_)[idx].weight;
+                        //         res_.idxes.emplace_back((*items_)[idx].idx);
+                        //     }
 
-                            record = res_.value;
-                        }
-                        
+                        //     record = res_.value;
+                        //     std::cout << record << '\n';
+                        // }
+                        std::cout << "index\n";
                         curr = backtrack(curr, set);
                         continue;
                     }
                     curr->dont_take_index = new Node(next_index);
                     curr->dont_take_index->parent = curr;
 
-                    set.emplace_back(next_index, 0);
-                    took_[next_index] = 1;
+                    set.emplace_back(index, 0);
+                    took_[index] = 1;
 
                     curr->state_ = 2;
                     curr = curr->dont_take_index;
@@ -856,15 +875,9 @@ public:
                 record = update_record(record, set);
                 // i checked all variants in this subtree, go up
                 curr = backtrack(curr, set);
-                // std::cout << "after:\n";
-                // std::cout << "<------------------->\n";
-                // for (auto [i, is] : set) {
-                    // std::cout << i << " " << is << '\n';
-                // }
-                // std::cout << "<------------------->\n";
             }
         }
-        record = update_record(record, set);
+        // record = update_record(record, set);
         return res_;
     }
 private:
@@ -902,20 +915,34 @@ private:
 
 
     std::int64_t update_record(std::int64_t record, Set const& set) {
-        if (record < current_c_) {
+        std::int64_t w = 0;
+        for (auto [idx, is_taken] : set) {
+            if (is_taken) {
+                w += res_.weight;
+            }
+        }
+        current_w_ = w;
+        if (record < current_c_ && w <= mW_) {
             record = current_c_;
             res_.value = record;
             res_.weight = current_w_;
+            
             res_.idxes.clear();
             for (auto [idx, is_taken] : set) {
-                res_.idxes.emplace_back((*items_)[idx].idx);
+                if (is_taken) {
+                    res_.idxes.emplace_back((*items_)[idx].idx);
+                    w += res_.weight;
+                }
             }
+            if (current_w_ != w) {
+                // std::abort();
+            }
+            // std::cout << record << '\n';
         }
         return record;
     }
 
-    std::int64_t get_split_index() const {
-        // 1) pick up all guys greedy
+    std::int64_t get_split_index_greedy() const {
         std::int64_t total_w = current_w_;
         std::int64_t split_idx = -1;
         for (std::int64_t idx = 0; idx < items_->size(); idx++) {
@@ -934,6 +961,21 @@ private:
         return split_idx;
     }
 
+    std::int64_t get_split_index_dummy() const {
+        for (std::int64_t idx = 0; idx < items_->size(); idx++) {
+            if (!took_[idx]) {
+                return idx;
+            }
+        }
+        return -1;
+    }
+
+    std::int64_t get_split_index() const {
+        // 1) pick up all guys greedy
+    //    return get_split_index_greedy();
+        return get_split_index_dummy();
+    }
+
     std::int64_t compute_upper_bound() const {
         std::int64_t total_w = current_w_;
         std::int64_t bound = current_c_;
@@ -947,7 +989,7 @@ private:
                 bound += c;
                 total_w += w;
             } else {
-                bound += static_cast<std::int64_t>( (static_cast<double>(mW_ - current_w_) / w) * c);
+                bound += static_cast<double>(mW_ - total_w) / w * c;
                 break;
             }
         }
@@ -1016,6 +1058,7 @@ int main() {
     // res.concat(lhs);
 
     auto bnb = branch_and_bounds_babanov(items, max_weight);
+    validate(bnb, items);
     output<kIsForContest>(bnb);
     // std::int64_t total_elems = 0;
     // std::int64_t occupied_weight = 0;
